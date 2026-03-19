@@ -30,3 +30,9 @@ secrets.py
 # ==========================
 .DS_Store
 Thumbs.db
+
+# ==========================
+# 📓 Jupyter Notebook
+# ==========================
+*.ipynb
+.ipynb_checkpoints/

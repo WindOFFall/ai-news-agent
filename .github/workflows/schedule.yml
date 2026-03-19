@@ -2,8 +2,8 @@ name: Daily AI News Agent
 
 on:
   schedule:
-    # GitHub Actions 使用 UTC 時間。UTC 08:20 = 台灣時間下午 16:20 (4:20 PM)
-    - cron: '20 8 * * *'
+    # GitHub Actions 使用 UTC 時間。UTC 09:10 = 台灣時間下午 17:10 (5:10 PM)
+    - cron: '10 9 * * *'
   workflow_dispatch:
 
 jobs:

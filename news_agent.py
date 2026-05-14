@@ -51,8 +51,8 @@ NEWS_SOURCES = [
 # 3. 核心功能模組
 # ==========================================
 
-def fetch_llm_stats_news(max_items: int = 20) -> str:
-    """爬取 llm-stats.com/ai-news，回傳格式化新聞文字"""
+def fetch_llm_stats_news(max_items: int = 50) -> list[dict]:
+    """爬取 llm-stats.com/ai-news，回傳 list[{title, url}]"""
     print("📡 抓取來源：LLM Stats (AI 產業最新動態)...")
     url = "https://llm-stats.com/ai-news"
     headers = {
@@ -81,13 +81,83 @@ def fetch_llm_stats_news(max_items: int = 20) -> str:
             link = a_tag["href"] if a_tag and a_tag.get("href") else ""
             if link.startswith("/"):
                 link = "https://llm-stats.com" + link
-            items.append(f"【標題】{title}\n【連結】{link}\n")
+            items.append({"title": title, "url": link})
 
         print(f"  ✅ 抓取完成：{len(items)} 則")
-        return "\n".join(items)
+        return items
     except Exception as e:
         print(f"  ❌ llm-stats 抓取失敗：{e}")
-        return ""
+        return []
+
+
+def translate_titles_with_llm(articles: list[dict]) -> list[dict]:
+    """用 LLM 批次翻譯英文標題為繁體中文，Gemini 優先，失敗切 Groq"""
+    print("🧠 翻譯標題中...")
+    titles_text = "\n".join(f"{i+1}. {a['title']}" for i, a in enumerate(articles))
+    prompt = (
+        "請將以下英文新聞標題逐一翻譯成繁體中文。\n"
+        "只輸出翻譯結果，每行一則，格式為「序號. 繁體中文標題」，不要加任何說明。\n\n"
+        f"{titles_text}"
+    )
+
+    raw = ""
+    for attempt in range(1, 3):
+        try:
+            response = client.models.generate_content(model='gemini-2.0-flash', contents=prompt)
+            raw = response.text.strip()
+            print("  ✅ 翻譯成功（Gemini）")
+            break
+        except Exception as e:
+            err = str(e)
+            print(f"  ❗ Gemini 錯誤：{err[:100]}")
+            if attempt < 2 and ('503' in err or '429' in err or 'unavailable' in err.lower()):
+                time.sleep(15)
+
+    if not raw:
+        for groq_model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+            try:
+                resp = groq_client.chat.completions.create(
+                    model=groq_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                )
+                raw = resp.choices[0].message.content.strip()
+                print(f"  ✅ 翻譯成功（Groq / {groq_model}）")
+                break
+            except Exception as e:
+                print(f"  ❗ Groq [{groq_model}] 失敗：{str(e)[:80]}")
+
+    # 解析翻譯結果，對應回原始 articles
+    translated = []
+    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+    for i, article in enumerate(articles):
+        zh_title = article["title"]  # fallback 英文
+        for line in lines:
+            if line.startswith(f"{i+1}."):
+                zh_title = line[len(f"{i+1}."):].strip()
+                break
+        translated.append({"title_zh": zh_title, "url": article["url"]})
+    return translated
+
+
+def send_llm_stats_report(articles: list[dict]):
+    """將翻譯後的 AI 新聞分段推播到 TG（每段最多 4000 字元）"""
+    if not articles:
+        return
+
+    header = "<b>🤖 【今日 AI 產業動態 — LLM Stats】</b>\n\n"
+    lines = [f"🔹 {a['title_zh']}\n🔗 {a['url']}" for a in articles]
+
+    chunks, current = [], header
+    for line in lines:
+        if len(current) + len(line) + 2 > 4000:
+            send_telegram_message(current)
+            time.sleep(2)
+            current = line + "\n\n"
+        else:
+            current += line + "\n\n"
+    if current.strip():
+        send_telegram_message(current)
 
 
 def fetch_rss_news(source_config):
@@ -240,18 +310,11 @@ def run_multi_source_agent():
         print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
         time.sleep(10)
 
-    # LLM Stats：AI 產業動態（直接爬網頁）
-    llm_stats_news = fetch_llm_stats_news(max_items=15)
-    if llm_stats_news.strip():
-        llm_stats_focus = (
-            "這是來自 llm-stats.com 的最新 AI 產業動態，涵蓋大型語言模型、AI 公司動向與技術突破。"
-            "請挑選最重要的 3 則，用繁體中文翻譯標題，並用一句話說明這則新聞對 AI 產業或台股科技供應鏈的意義。"
-        )
-        llm_result = analyze_source_with_ai("LLM Stats (AI產業動態)", llm_stats_news, llm_stats_focus)
-        full_daily_report += "<b>📍 來源板塊：LLM Stats (AI產業動態)</b>\n"
-        full_daily_report += "➖" * 15 + "\n"
-        safe_result = llm_result.replace('<', '〈').replace('>', '〉')
-        full_daily_report += f"{safe_result}\n\n"
+    # LLM Stats：AI 產業動態（爬網頁 → 翻譯標題 → 分段推播）
+    llm_stats_articles = fetch_llm_stats_news(max_items=50)
+    if llm_stats_articles:
+        translated = translate_titles_with_llm(llm_stats_articles)
+        send_llm_stats_report(translated)
         print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
         time.sleep(10)
     else:

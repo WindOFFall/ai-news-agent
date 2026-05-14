@@ -153,8 +153,8 @@ def send_llm_stats_report(articles: list[dict]):
 
     header = "<b>🤖 【今日 AI 產業動態 — LLM Stats】</b>\n\n"
     lines = []
-    for a in articles:
-        line = f"🔹 {a['title_zh']}"
+    for i, a in enumerate(articles, 1):
+        line = f"🔹 {i}. {a['title_zh']}"
         if a.get("url"):
             line += f"\n🔗 {a['url']}"
         lines.append(line)

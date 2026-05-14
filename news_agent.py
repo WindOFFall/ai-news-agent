@@ -74,14 +74,10 @@ def fetch_llm_stats_news(max_items: int = 50) -> list[dict]:
             if not h3:
                 continue
             title = h3.get_text(strip=True)
-            if not title or title in seen:
+            if not title or title in seen or len(title) < 15:
                 continue
             seen.add(title)
-            a_tag = h3.find("a") or card.find("a")
-            link = a_tag["href"] if a_tag and a_tag.get("href") else ""
-            if link.startswith("/"):
-                link = "https://llm-stats.com" + link
-            items.append({"title": title, "url": link})
+            items.append({"title": title})
 
         print(f"  ✅ 抓取完成：{len(items)} 則")
         return items
@@ -146,18 +142,19 @@ def send_llm_stats_report(articles: list[dict]):
         return
 
     header = "<b>🤖 【今日 AI 產業動態 — LLM Stats】</b>\n\n"
-    lines = [f"🔹 {a['title_zh']}\n🔗 {a['url']}" for a in articles]
+    footer = "\n👉 完整新聞：https://llm-stats.com/ai-news"
+    lines = [f"🔹 {a['title_zh']}" for a in articles]
 
-    chunks, current = [], header
+    current = header
     for line in lines:
-        if len(current) + len(line) + 2 > 4000:
+        if len(current) + len(line) + 2 > 3800:
             send_telegram_message(current)
             time.sleep(2)
-            current = line + "\n\n"
+            current = line + "\n"
         else:
-            current += line + "\n\n"
+            current += line + "\n"
     if current.strip():
-        send_telegram_message(current)
+        send_telegram_message(current + footer)
 
 
 def fetch_rss_news(source_config):

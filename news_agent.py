@@ -303,38 +303,31 @@ def run_multi_source_agent():
     print(" 🤖 啟動多源情報 Agent...")
     print("=" * 60)
 
-    full_daily_report = "<b>📰 【今日 AI 科技與市場前線日報】</b>\n\n"
+    # RSS 來源暫時關閉
+    # full_daily_report = "<b>📰 【今日 AI 科技與市場前線日報】</b>\n\n"
+    # for source in NEWS_SOURCES:
+    #     raw_news = fetch_rss_news(source)
+    #     if not raw_news.strip():
+    #         print(f"  ⚠️ {source['name']} 今日無近期文章，略過。")
+    #         continue
+    #     analysis_result = analyze_source_with_ai(source['name'], raw_news, source['ai_focus'])
+    #     full_daily_report += f"<b>📍 來源板塊：{source['name']}</b>\n"
+    #     full_daily_report += "➖" * 15 + "\n"
+    #     safe_result = analysis_result.replace('<', '〈').replace('>', '〉')
+    #     full_daily_report += f"{safe_result}\n\n"
+    #     print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
+    #     time.sleep(10)
+    # print(full_daily_report)
+    # print("📲 正在將報告推送到手機...")
+    # send_telegram_message(full_daily_report)
 
-    for source in NEWS_SOURCES:
-        raw_news = fetch_rss_news(source)
-
-        if not raw_news.strip():
-            print(f"  ⚠️ {source['name']} 今日無近期文章，略過。")
-            continue
-
-        analysis_result = analyze_source_with_ai(source['name'], raw_news, source['ai_focus'])
-
-        full_daily_report += f"<b>📍 來源板塊：{source['name']}</b>\n"
-        full_daily_report += "➖" * 15 + "\n"
-        safe_result = analysis_result.replace('<', '〈').replace('>', '〉')
-        full_daily_report += f"{safe_result}\n\n"
-
-        print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
-        time.sleep(10)
-
-    # LLM Stats：AI 產業動態（爬網頁 → 翻譯標題 → 分段推播）
+    # LLM Stats：AI 產業動態（RSC → 翻譯標題 → 分段推播）
     llm_stats_articles = fetch_llm_stats_news()
     if llm_stats_articles:
         translated = translate_titles_with_llm(llm_stats_articles)
         send_llm_stats_report(translated)
-        print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
-        time.sleep(10)
     else:
         print("  ⚠️ LLM Stats 今日無資料，略過。")
-
-    print(full_daily_report)
-    print("📲 正在將報告推送到手機...")
-    send_telegram_message(full_daily_report)
 
 
 # 執行

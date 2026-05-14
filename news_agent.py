@@ -53,10 +53,14 @@ NEWS_SOURCES = [
 # ==========================================
 
 def fetch_llm_stats_news() -> list[dict]:
-    """爬取 llm-stats.com/ai-news RSC 資料，回傳最近 36 小時內的新聞 list[{title, url, source}]"""
+    """爬取 llm-stats.com/ai-news RSC 資料，回傳昨天（台灣時間 00:00～23:59）的新聞"""
     from email.utils import parsedate_to_datetime
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
-    print(f"📡 抓取來源：LLM Stats（最近 36 小時，自 {cutoff.strftime('%Y-%m-%d %H:%M')} UTC）...")
+    TW = timezone(timedelta(hours=8))
+    tw_now = datetime.now(TW)
+    yesterday = tw_now.date() - timedelta(days=1)
+    day_start = datetime(yesterday.year, yesterday.month, yesterday.day, 0, 0, 0, tzinfo=TW)
+    day_end   = datetime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59, tzinfo=TW)
+    print(f"📡 抓取來源：LLM Stats（昨天 {yesterday} 台灣時間）...")
 
     url = "https://llm-stats.com/ai-news"
     headers = {
@@ -79,7 +83,8 @@ def fetch_llm_stats_news() -> list[dict]:
                 dt = parsedate_to_datetime(pub_date)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                if dt < cutoff:
+                dt_tw = dt.astimezone(TW)
+                if not (day_start <= dt_tw <= day_end):
                     continue
             except Exception:
                 continue

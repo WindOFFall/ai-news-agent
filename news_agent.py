@@ -54,18 +54,23 @@ NEWS_SOURCES = [
 _NAV_KEYWORDS = [
     "best llm", "best ai for", "top llm", "all llm",
     "compare model", "popular comparison", "open-source llm", "open source llm",
-    "leaderboard", "benchmark", "use case", "define your",
+    "open source ai", "leaderboard", "benchmark", "use case", "define your",
     "consider cost", "evaluate latency", "api provider",
-    "general knowledge", "what's the latest", "newsletter",
+    "general knowledge", "newsletter", "in one email",
     "llm research update", "test with your", "community",
     "llm rankings", "llm blog", "staying rotary", "vertex-softmax",
     "hierarchical multi-scale", "trajectory-matching", "unlocking dllm",
     "ratio reward", "protein language model", "eeg microstate",
     "quide:", "leap:", "tmpo:", "ξ-dpo",
+    "mechanistically", "discrete diffusion", "supervised fine-tuning",
+    "rotation-preserving", "llm inference",
 ]
 
 def _is_nav_or_paper(title: str) -> bool:
     t = title.lower()
+    # FAQ 問句全部排除
+    if t.startswith(("where ", "what ", "how ", "which ", "when ")):
+        return True
     return any(kw in t for kw in _NAV_KEYWORDS)
 
 
@@ -83,18 +88,10 @@ def fetch_llm_stats_news(max_items: int = 20) -> list[dict]:
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # 優先只找 <article> 標籤，若無則擴大到 div/section
-        cards = soup.find_all("article")
-        if not cards:
-            cards = soup.find_all(lambda tag: tag.name in ("div", "section") and tag.find("h3"))
-
         seen, items = set(), []
-        for card in cards:
+        for h3 in soup.find_all("h3"):
             if len(items) >= max_items:
                 break
-            h3 = card.find("h3")
-            if not h3:
-                continue
             title = h3.get_text(strip=True)
             if not title or title in seen or len(title) < 20:
                 continue

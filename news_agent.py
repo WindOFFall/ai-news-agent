@@ -2,18 +2,19 @@ import feedparser
 import os
 import requests
 import time
+import urllib3
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from google import genai
 from groq import Groq
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==========================================
 # 1. 初始化
 # ==========================================
 
 load_dotenv()
-if not os.getenv("GEMINI_API_KEY"):
-    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '../reason-stock-agent/.env'))
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -49,6 +50,45 @@ NEWS_SOURCES = [
 # ==========================================
 # 3. 核心功能模組
 # ==========================================
+
+def fetch_llm_stats_news(max_items: int = 20) -> str:
+    """爬取 llm-stats.com/ai-news，回傳格式化新聞文字"""
+    print("📡 抓取來源：LLM Stats (AI 產業最新動態)...")
+    url = "https://llm-stats.com/ai-news"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        from bs4 import BeautifulSoup
+        resp = requests.get(url, headers=headers, timeout=15, verify=False)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        seen, items = set(), []
+        cards = soup.find_all(lambda tag: tag.name in ("article", "div", "section") and tag.find("h3"))
+        for card in cards:
+            if len(items) >= max_items:
+                break
+            h3 = card.find("h3")
+            if not h3:
+                continue
+            title = h3.get_text(strip=True)
+            if not title or title in seen:
+                continue
+            seen.add(title)
+            a_tag = h3.find("a") or card.find("a")
+            link = a_tag["href"] if a_tag and a_tag.get("href") else ""
+            if link.startswith("/"):
+                link = "https://llm-stats.com" + link
+            items.append(f"【標題】{title}\n【連結】{link}\n")
+
+        print(f"  ✅ 抓取完成：{len(items)} 則")
+        return "\n".join(items)
+    except Exception as e:
+        print(f"  ❌ llm-stats 抓取失敗：{e}")
+        return ""
+
 
 def fetch_rss_news(source_config):
     """抓取 RSS 新聞，只取昨天與今天的文章"""
@@ -199,6 +239,23 @@ def run_multi_source_agent():
 
         print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
         time.sleep(10)
+
+    # LLM Stats：AI 產業動態（直接爬網頁）
+    llm_stats_news = fetch_llm_stats_news(max_items=15)
+    if llm_stats_news.strip():
+        llm_stats_focus = (
+            "這是來自 llm-stats.com 的最新 AI 產業動態，涵蓋大型語言模型、AI 公司動向與技術突破。"
+            "請挑選最重要的 3 則，用繁體中文翻譯標題，並用一句話說明這則新聞對 AI 產業或台股科技供應鏈的意義。"
+        )
+        llm_result = analyze_source_with_ai("LLM Stats (AI產業動態)", llm_stats_news, llm_stats_focus)
+        full_daily_report += "<b>📍 來源板塊：LLM Stats (AI產業動態)</b>\n"
+        full_daily_report += "➖" * 15 + "\n"
+        safe_result = llm_result.replace('<', '〈').replace('>', '〉')
+        full_daily_report += f"{safe_result}\n\n"
+        print("⏳ 休息 10 秒，避免觸發 API 頻率限制...")
+        time.sleep(10)
+    else:
+        print("  ⚠️ LLM Stats 今日無資料，略過。")
 
     print(full_daily_report)
     print("📲 正在將報告推送到手機...")

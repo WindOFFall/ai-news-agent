@@ -1,5 +1,6 @@
 import feedparser
 import os
+import re
 import requests
 import time
 import urllib3
@@ -51,54 +52,42 @@ NEWS_SOURCES = [
 # 3. 核心功能模組
 # ==========================================
 
-_NAV_KEYWORDS = [
-    "best llm", "best ai for", "top llm", "all llm",
-    "compare model", "popular comparison", "open-source llm", "open source llm",
-    "open source ai", "leaderboard", "benchmark", "use case", "define your",
-    "consider cost", "evaluate latency", "api provider",
-    "general knowledge", "newsletter", "in one email",
-    "llm research update", "test with your", "community",
-    "llm rankings", "llm blog", "staying rotary", "vertex-softmax",
-    "hierarchical multi-scale", "trajectory-matching", "unlocking dllm",
-    "ratio reward", "protein language model", "eeg microstate",
-    "quide:", "leap:", "tmpo:", "ξ-dpo",
-    "mechanistically", "discrete diffusion", "supervised fine-tuning",
-    "rotation-preserving", "llm inference",
-]
+def fetch_llm_stats_news() -> list[dict]:
+    """爬取 llm-stats.com/ai-news RSC 資料，回傳最近 36 小時內的新聞 list[{title, url, source}]"""
+    from email.utils import parsedate_to_datetime
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=36)
+    print(f"📡 抓取來源：LLM Stats（最近 36 小時，自 {cutoff.strftime('%Y-%m-%d %H:%M')} UTC）...")
 
-def _is_nav_or_paper(title: str) -> bool:
-    t = title.lower()
-    # FAQ 問句全部排除
-    if t.startswith(("where ", "what ", "how ", "which ", "when ")):
-        return True
-    return any(kw in t for kw in _NAV_KEYWORDS)
-
-
-def fetch_llm_stats_news(max_items: int = 20) -> list[dict]:
-    """爬取 llm-stats.com/ai-news，回傳 list[{title}]"""
-    print("📡 抓取來源：LLM Stats (AI 產業最新動態)...")
     url = "https://llm-stats.com/ai-news"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "RSC": "1",
     }
     try:
-        from bs4 import BeautifulSoup
-        resp = requests.get(url, headers=headers, timeout=15, verify=False)
+        resp = requests.get(url, headers=headers, timeout=20, verify=False)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        text = resp.text
 
-        seen, items = set(), []
-        for h3 in soup.find_all("h3"):
-            if len(items) >= max_items:
-                break
-            title = h3.get_text(strip=True)
-            if not title or title in seen or len(title) < 20:
+        raw_items = re.findall(
+            r'\{"id":"[^"]+","title":"([^"]{5,300})","description":"[^"]*","link":"([^"]+)","source":"([^"]+)","pubDate":"([^"]+)"',
+            text
+        )
+
+        seen_urls, seen_titles, items = set(), set(), []
+        for title, link, source, pub_date in raw_items:
+            try:
+                dt = parsedate_to_datetime(pub_date)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt < cutoff:
+                    continue
+            except Exception:
                 continue
-            if _is_nav_or_paper(title):
+            if link in seen_urls or title in seen_titles:
                 continue
-            seen.add(title)
-            items.append({"title": title})
+            seen_urls.add(link)
+            seen_titles.add(title)
+            items.append({"title": title, "url": link, "source": source})
 
         print(f"  ✅ 抓取完成：{len(items)} 則")
         return items
@@ -153,29 +142,34 @@ def translate_titles_with_llm(articles: list[dict]) -> list[dict]:
             if line.startswith(f"{i+1}."):
                 zh_title = line[len(f"{i+1}."):].strip()
                 break
-        translated.append({"title_zh": zh_title})
+        translated.append({"title_zh": zh_title, "url": article.get("url", ""), "source": article.get("source", "")})
     return translated
 
 
 def send_llm_stats_report(articles: list[dict]):
-    """將翻譯後的 AI 新聞分段推播到 TG（每段最多 4000 字元）"""
+    """將翻譯後的 AI 新聞分段推播到 TG（每段最多 3800 字元）"""
     if not articles:
         return
 
     header = "<b>🤖 【今日 AI 產業動態 — LLM Stats】</b>\n\n"
-    footer = "\n👉 完整新聞：https://llm-stats.com/ai-news"
-    lines = [f"🔹 {a['title_zh']}" for a in articles]
+    lines = []
+    for a in articles:
+        line = f"🔹 {a['title_zh']}"
+        if a.get("url"):
+            line += f"\n🔗 {a['url']}"
+        lines.append(line)
 
     current = header
     for line in lines:
-        if len(current) + len(line) + 2 > 3800:
+        chunk = line + "\n\n"
+        if len(current) + len(chunk) > 3800:
             send_telegram_message(current)
             time.sleep(2)
-            current = line + "\n"
+            current = chunk
         else:
-            current += line + "\n"
+            current += chunk
     if current.strip():
-        send_telegram_message(current + footer)
+        send_telegram_message(current)
 
 
 def fetch_rss_news(source_config):

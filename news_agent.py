@@ -51,8 +51,26 @@ NEWS_SOURCES = [
 # 3. 核心功能模組
 # ==========================================
 
-def fetch_llm_stats_news(max_items: int = 50) -> list[dict]:
-    """爬取 llm-stats.com/ai-news，回傳 list[{title, url}]"""
+_NAV_KEYWORDS = [
+    "best llm", "best ai for", "top llm", "all llm",
+    "compare model", "popular comparison", "open-source llm", "open source llm",
+    "leaderboard", "benchmark", "use case", "define your",
+    "consider cost", "evaluate latency", "api provider",
+    "general knowledge", "what's the latest", "newsletter",
+    "llm research update", "test with your", "community",
+    "llm rankings", "llm blog", "staying rotary", "vertex-softmax",
+    "hierarchical multi-scale", "trajectory-matching", "unlocking dllm",
+    "ratio reward", "protein language model", "eeg microstate",
+    "quide:", "leap:", "tmpo:", "ξ-dpo",
+]
+
+def _is_nav_or_paper(title: str) -> bool:
+    t = title.lower()
+    return any(kw in t for kw in _NAV_KEYWORDS)
+
+
+def fetch_llm_stats_news(max_items: int = 20) -> list[dict]:
+    """爬取 llm-stats.com/ai-news，回傳 list[{title}]"""
     print("📡 抓取來源：LLM Stats (AI 產業最新動態)...")
     url = "https://llm-stats.com/ai-news"
     headers = {
@@ -65,8 +83,12 @@ def fetch_llm_stats_news(max_items: int = 50) -> list[dict]:
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
 
+        # 優先只找 <article> 標籤，若無則擴大到 div/section
+        cards = soup.find_all("article")
+        if not cards:
+            cards = soup.find_all(lambda tag: tag.name in ("div", "section") and tag.find("h3"))
+
         seen, items = set(), []
-        cards = soup.find_all(lambda tag: tag.name in ("article", "div", "section") and tag.find("h3"))
         for card in cards:
             if len(items) >= max_items:
                 break
@@ -74,7 +96,9 @@ def fetch_llm_stats_news(max_items: int = 50) -> list[dict]:
             if not h3:
                 continue
             title = h3.get_text(strip=True)
-            if not title or title in seen or len(title) < 15:
+            if not title or title in seen or len(title) < 20:
+                continue
+            if _is_nav_or_paper(title):
                 continue
             seen.add(title)
             items.append({"title": title})
@@ -132,7 +156,7 @@ def translate_titles_with_llm(articles: list[dict]) -> list[dict]:
             if line.startswith(f"{i+1}."):
                 zh_title = line[len(f"{i+1}."):].strip()
                 break
-        translated.append({"title_zh": zh_title, "url": article["url"]})
+        translated.append({"title_zh": zh_title})
     return translated
 
 

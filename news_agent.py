@@ -323,7 +323,7 @@ def run_multi_source_agent():
         time.sleep(10)
 
     # LLM Stats：AI 產業動態（爬網頁 → 翻譯標題 → 分段推播）
-    llm_stats_articles = fetch_llm_stats_news(max_items=50)
+    llm_stats_articles = fetch_llm_stats_news()
     if llm_stats_articles:
         translated = translate_titles_with_llm(llm_stats_articles)
         send_llm_stats_report(translated)
